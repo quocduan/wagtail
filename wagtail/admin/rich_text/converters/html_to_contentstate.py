@@ -22,7 +22,8 @@ class HandlerState:
         self.current_entity_ranges = []
 
         # what to do with leading whitespace on the next text node we encounter: strip, keep or force
-        self.leading_whitespace = STRIP_WHITESPACE
+        # self.leading_whitespace = STRIP_WHITESPACE
+        self.leading_whitespace = FORCE_WHITESPACE
         self.list_depth = 0
         self.list_item_type = None
 
@@ -102,6 +103,7 @@ class BlockElementHandler:
         contentstate.blocks.append(block)
         state.current_block = block
         state.leading_whitespace = STRIP_WHITESPACE
+        # state.leading_whitespace = FORCE_WHITESPACE
         state.has_preceding_nonatomic_block = True
 
     def handle_endtag(self, name, state, contentState):
@@ -306,7 +308,8 @@ class HtmlToContentStateHandler(HTMLParser):
 
     def handle_data(self, content):
         # normalise whitespace sequences to a single space
-        content = re.sub(WHITESPACE_RE, ' ', content)
+        if self.state.leading_whitespace != KEEP_WHITESPACE:
+            content = re.sub(WHITESPACE_RE, ' ', content)
 
         if self.state.current_block is None:
             if content == ' ':
@@ -315,33 +318,36 @@ class HtmlToContentStateHandler(HTMLParser):
             else:
                 # create a new paragraph block for this content
                 add_paragraph_block(self.state, self.contentstate)
-
-        if content == ' ':
-            # if leading_whitespace = strip, this whitespace node is not significant
-            #   and should be skipped.
-            # For other cases, _don't_ output the whitespace yet, but set leading_whitespace = force
-            # so that a space is forced before the next text node or inline element. If no such node
-            # appears (= we reach the end of the block), the whitespace can rightfully be dropped.
-            if self.state.leading_whitespace != STRIP_WHITESPACE:
-                self.state.leading_whitespace = FORCE_WHITESPACE
-        else:
-            # strip or add leading whitespace according to the leading_whitespace flag
-            if self.state.leading_whitespace == STRIP_WHITESPACE:
-                content = content.lstrip()
-            elif self.state.leading_whitespace == FORCE_WHITESPACE and not content.startswith(' '):
-                content = ' ' + content
-
-            if content.endswith(' '):
-                # don't output trailing whitespace yet, because we want to discard it if the end
-                # of the block follows. Instead, we'll set leading_whitespace = force so that
-                # any following text or inline element will be prefixed by a space
-                content = content.rstrip()
-                self.state.leading_whitespace = FORCE_WHITESPACE
+        if self.state.leading_whitespace != KEEP_WHITESPACE:
+            if content == ' ':
+                # if leading_whitespace = strip, this whitespace node is not significant
+                #   and should be skipped.
+                # For other cases, _don't_ output the whitespace yet, but set leading_whitespace = force
+                # so that a space is forced before the next text node or inline element. If no such node
+                # appears (= we reach the end of the block), the whitespace can rightfully be dropped.
+                if self.state.leading_whitespace != STRIP_WHITESPACE:
+                    self.state.leading_whitespace = FORCE_WHITESPACE
             else:
-                # no trailing whitespace here - any leading whitespace at the start of the
-                # next text node should be respected
-                self.state.leading_whitespace = KEEP_WHITESPACE
+                # strip or add leading whitespace according to the leading_whitespace flag
+                if self.state.leading_whitespace == STRIP_WHITESPACE:
+                    content = content.lstrip()
+                elif self.state.leading_whitespace == FORCE_WHITESPACE and not content.startswith(' '):
+                    content = ' ' + content
 
+                if content.endswith(' '):
+                    # don't output trailing whitespace yet, because we want to discard it if the end
+                    # of the block follows. Instead, we'll set leading_whitespace = force so that
+                    # any following text or inline element will be prefixed by a space
+                    content = content.rstrip()
+                    self.state.leading_whitespace = FORCE_WHITESPACE
+                else:
+                    # no trailing whitespace here - any leading whitespace at the start of the
+                    # next text node should be respected
+                    # self.state.leading_whitespace = KEEP_WHITESPACE
+                    self.state.leading_whitespace = FORCE_WHITESPACE
+
+                self.state.current_block.text += content
+        else: # KEEP_WHITESPACE
             self.state.current_block.text += content
 
     def close(self):
